@@ -1,0 +1,119 @@
+# ===========================================================
+# Car Price Estimation System - Configuration
+# ===========================================================
+
+project:
+  name: car-price-estimation
+  version: 1.0.0
+  description: End-to-end ML pipeline for used car price prediction
+  author: hgabrali
+
+# ── Data ──────────────────────────────────────────────────────
+data:
+  source_table: car_price_assignment
+  database: default
+  target_column: price
+  
+  paths:
+    base:         /tmp/car_price
+    raw:          /tmp/car_price/raw_data.parquet
+    clean:        /tmp/car_price/clean_data.parquet
+    featured:     /tmp/car_price/featured_data.parquet
+    train:        /tmp/car_price/train_data.parquet
+    test:         /tmp/car_price/test_data.parquet
+    model:        /tmp/car_price/final_model
+    artifacts:    /tmp/car_price/artifacts
+
+# ── Data Cleaning ─────────────────────────────────────────────
+cleaning:
+  outlier_lower_quantile: 0.01
+  outlier_upper_quantile: 0.99
+  min_year: 1990
+  rare_category_threshold: 10
+  drop_na_target: true
+
+# ── Feature Engineering ───────────────────────────────────────
+features:
+  current_year: auto   # Will be computed at runtime
+  mileage_bins:
+    - [0, 20000, 'Very Low']
+    - [20001, 50000, 'Low']
+    - [50001, 100000, 'Medium']
+    - [100001, 150000, 'High']
+    - [150001, 200000, 'Very High']
+    - [200001, 999999, 'Extreme']
+  age_groups:
+    - [0, 2, 'Brand New']
+    - [3, 5, 'Nearly New']
+    - [6, 10, 'Recent']
+    - [11, 15, 'Used']
+    - [16, 20, 'Old']
+    - [21, 999, 'Classic']
+  rare_category_threshold: 20
+  collapse_rare_cols:
+    - make
+    - model
+    - color
+    - drive_unit
+
+# ── Preprocessing & Modelling ────────────────────────────────
+modelling:
+  test_size: 0.20
+  random_state: 42
+  normalize: true
+  normalize_method: zscore
+  transformation: true
+  transformation_method: yeo-johnson
+  remove_multicollinearity: true
+  multicollinearity_threshold: 0.90
+  
+  pycaret_models:
+    - lr
+    - ridge
+    - lasso
+    - en
+    - dt
+    - rf
+    - gbr
+    - xgboost
+    - lightgbm
+  
+  n_top_models: 3
+  sort_metric: RMSE
+  
+  tuning:
+    n_iter: 50
+    optimize: RMSE
+    search_library: optuna
+    search_algorithm: tpe
+
+# ── MLflow ────────────────────────────────────────────────────
+mlflow:
+  experiment_name: /Users/car-price-estimation/car_price_pipeline
+  registered_model_name: CarPriceRegressor
+  log_artifacts: true
+
+# ── Interpretability ──────────────────────────────────────────
+interpretability:
+  shap:
+    max_display: 15
+    fallback_sample_size: 100
+    predict_sample_size: 200
+  lime:
+    num_features: 10
+    num_samples_to_explain: 3
+
+# ── Databricks Workflow ───────────────────────────────────────
+workflow:
+  job_name: car_price_estimation_pipeline
+  cluster_policy: shared
+  max_retries: 1
+  timeout_seconds: 3600
+  notebooks:
+    - 01_Data_Gathering
+    - 02_Data_Cleaning
+    - 03_EDA
+    - 04_Feature_Engineering
+    - 05_Preprocessing_Dataset
+    - 06_3Models_Training
+    - 07_Valuation
