@@ -243,5 +243,5 @@ Access via: **Databricks > Machine Learning > Experiments**
 
 ## Author
 
-Hande Gabriali-Knobloch | [GitHub](https://github.com/hgabrali) |
-[LinkedIn](https://www.linkedin.com/in/hande-gabriali-knobloch-5b176615)
+Hande Gabrali-Knobloch | [GitHub](https://github.com/hgabrali) |
+[LinkedIn](https://www.linkedin.com/in/hande-gabral%C4%B1-knobloch/)
