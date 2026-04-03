@@ -1,5 +1,8 @@
 # Car Price Estimation System
 
+<img width="1024" height="1024" alt="image" src="https://github.com/user-attachments/assets/2beebc0c-9160-472e-89f2-a1084d3ef93e" />
+
+
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![Databricks](https://img.shields.io/badge/Platform-Databricks-orange)
 ![sklearn](https://img.shields.io/badge/ML-scikit--learn-blue)
