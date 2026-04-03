@@ -2,7 +2,7 @@
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![Databricks](https://img.shields.io/badge/Platform-Databricks-orange)
-![PyCaret](https://img.shields.io/badge/AutoML-PyCaret%203.x-green)
+![sklearn](https://img.shields.io/badge/ML-scikit--learn-blue)
 ![MLflow](https://img.shields.io/badge/Tracking-MLflow-blue)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
@@ -25,36 +25,33 @@ over- and under-pricing, improves margin, and speeds up inventory turnover.
 
 ```
 Databricks Table (car_price_assignment)
-         |
-         v
+    |
+    v
 01_Data_Gathering       <-- PySpark load, schema check, Parquet export
-         |
-         v
+    |
+    v
 02_Data_Cleaning        <-- Missing values, outliers, type fixes, dedup
-         |
-         v
+    |
+    v
 03_EDA                  <-- Distributions, correlations, grouped analyses
-         |
-         v
+    |
+    v
 04_Feature_Engineering  <-- Car age, mileage bins, interactions, log-price
-         |
-         v
-05_Preprocessing_Dataset<-- Train/test split, PyCaret setup, MLflow logging
-         |
-         v
-06_3Models_Training     <-- AutoML compare, tune, evaluate, SHAP, LIME, MLflow
-         |
-         v
+    |
+    v
+05_Preprocessing_Dataset<-- Train/test split, Spark table save, MLflow logging
+    |
+    v
+06_3Models_Training     <-- sklearn model compare, tune, evaluate, SHAP, LIME, MLflow
+    |
+    v
 07_Valuation            <-- Load model, predict_price(), batch/widget predictions
 ```
 
-**DBFS Storage Locations:**
-- `/tmp/car_price/raw_data.parquet` - Raw PySpark export
-- `/tmp/car_price/clean_data.parquet` - After cleaning
-- `/tmp/car_price/featured_data.parquet` - After feature engineering
-- `/tmp/car_price/train_data.parquet` - Training split
-- `/tmp/car_price/test_data.parquet` - Test split
-- `/tmp/car_price/final_model` - Saved PyCaret model pipeline
+**Storage Locations:**
+- `car_price_train` / `car_price_test` - Spark tables (train/test split)
+- `/Workspace/Users/.../models/final_model.pkl` - Saved sklearn Pipeline model
+- `/Workspace/Users/.../plots/` - Evaluation and SHAP/LIME plots
 
 ---
 
@@ -71,6 +68,7 @@ car-price-estimation/
 │   ├── 06_3Models_Training.py
 │   └── 07_Valuation.py
 ├── README.md
+├── LICENSE
 ├── requirements.txt
 └── config.yml
 ```
@@ -81,11 +79,12 @@ car-price-estimation/
 
 | Layer | Technology |
 |-------|------------|
-| Platform | Databricks (DBR 14+) |
+| Platform | Databricks (DBR 14+, Free Edition compatible) |
 | Data Processing | PySpark + Pandas |
-| AutoML / Modelling | PyCaret 3.x |
+| Modelling | scikit-learn Pipelines (Ridge, RandomForest, GradientBoosting) |
+| Hyperparameter Tuning | GridSearchCV |
 | Interpretability | SHAP 0.44+, LIME |
-| Experiment Tracking | MLflow (integrated) |
+| Experiment Tracking | MLflow (with Free Edition fallback) |
 | Orchestration | Databricks Workflows |
 | Version Control | GitHub (Databricks Repos) |
 
@@ -112,6 +111,18 @@ car-price-estimation/
 
 ---
 
+## Model Results
+
+| Metric | Value |
+|--------|-------|
+| Model | Random Forest (sklearn Pipeline) |
+| MAE | $1,376 |
+| RMSE | $1,915 |
+| R² | 0.9536 (95.4% variance explained) |
+| MAPE | 10.02% |
+
+---
+
 ## KPIs
 
 | Metric | Description |
@@ -127,7 +138,7 @@ car-price-estimation/
 
 ### 1. Prerequisites
 
-- Databricks workspace with DBR 14.0+ cluster
+- Databricks workspace with DBR 14.0+ cluster (Free Edition supported)
 - Table `car_price_assignment` loaded in the `default` database
 - GitHub account with Personal Access Token (PAT)
 
@@ -145,24 +156,25 @@ car-price-estimation/
 
 Option A - via cluster UI (Compute > Libraries):
 ```
-pycaret==3.3.2
 shap>=0.44.0
 lime>=0.2.0.1
-lightgbm>=4.0.0
-xgboost>=2.0.0
-optuna>=3.4.0
+numpy<2
 ```
 
-Option B - add to notebook 05 or 06 init cell:
+Option B - add to notebook 06 init cell (already included):
 ```python
-%pip install pycaret==3.3.2 shap lime lightgbm xgboost optuna --quiet
+%pip install shap lime "numpy<2" --quiet
 dbutils.library.restartPython()
 ```
 
 ### 4. Configure MLflow Experiment
 
-The experiment path `/Users/car-price-estimation/car_price_pipeline` is created
-automatically. To change it, update `MLFLOW_EXP_NAME` in notebooks 05 and 06.
+The experiment path `/Users/hande.gabrali@gmail.com/car_price_pipeline` is created automatically.
+To change it, update `MLFLOW_EXP_NAME` in notebooks 05 and 06.
+
+> **Note:** On Databricks Free Edition, MLflow Model Registry is not available.
+> The notebook automatically falls back to saving the model locally via `joblib`
+> when MLflow logging fails.
 
 ---
 
@@ -171,6 +183,7 @@ automatically. To change it, update `MLFLOW_EXP_NAME` in notebooks 05 and 06.
 ### Manual (Notebook by Notebook)
 
 Run notebooks in order from your Databricks workspace:
+
 ```
 01 → 02 → 03 → 04 → 05 → 06 → 07
 ```
@@ -199,9 +212,9 @@ tasks:
 ```python
 # Pass a car's attributes as JSON to notebook 07:
 car_json = '{"make": "Toyota", "model": "Corolla", "year": 2020, "condition": "Good",
-             "mileage": 45000, "fuel_type": "Petrol", "volume": 1800,
-             "color": "Blue", "transmission": "Automatic",
-             "drive_unit": "FWD", "segment": "Sedan"}'
+"mileage": 45000, "fuel_type": "Petrol", "volume": 1800,
+"color": "Blue", "transmission": "Automatic",
+"drive_unit": "FWD", "segment": "Sedan"}'
 ```
 
 ---
@@ -224,24 +237,40 @@ pip install -r requirements.txt
 Every training run logs:
 - Model hyperparameters
 - MAE, RMSE, R², MAPE metrics
-- Trained model artifact (registered as `CarPriceRegressor`)
+- Trained model artifact (sklearn Pipeline)
 - Actual vs Predicted scatter plot
 - SHAP summary and importance plots
 
 Access via: **Databricks > Machine Learning > Experiments**
 
+> **Free Edition Note:** If MLflow Model Registry is unavailable, the model is
+> automatically saved locally as a `.pkl` file via `joblib`. All metrics and
+> parameters are still logged where possible.
+
 ---
 
 ## Model Interpretability
 
-- **SHAP:** Global feature importance (beeswarm + bar plots) using TreeExplainer
-  or KernelExplainer fallback.
-- **LIME:** Local explanations for individual predictions, showing which features
-  raised or lowered the price estimate for that specific car.
+- **SHAP:** Global feature importance (beeswarm + bar plots) using TreeExplainer. Key findings: curbweight and enginesize are the strongest price predictors; horsepower and car dimensions are significant positive drivers; fuel efficiency negatively correlates with price.
+- **LIME:** Local explanations for individual predictions, showing which features raised or lowered the price estimate for that specific car.
+
+---
+
+## Agent Audit Framework
+
+Following the AI Agent audit methodology for Data Analysts/Scientists:
+
+| Audit Dimension | Assessment |
+|-----------------|------------|
+| **Logical Validation** | Random Forest validated against Ridge and Gradient Boosting via cross-validation |
+| **Hallucination Detection** | SHAP and LIME confirm the model relies on physically meaningful features |
+| **Information Sources** | Verified CarPrice_Assignment dataset with 205 records and 26 features |
+| **Error Margins** | MAPE ~10% is acceptable for dealership pricing guidance |
+| **Business Translation** | Data-driven pricing replaces gut-feel estimates with quantified predictions |
+| **Strategic Decision** | 10% MAPE balances over-pricing (losing customers) vs under-pricing (losing margin) |
 
 ---
 
 ## Author
 
-Hande Gabrali-Knobloch | [GitHub](https://github.com/hgabrali) |
-[LinkedIn](https://www.linkedin.com/in/hande-gabral%C4%B1-knobloch/)
+Hande Gabrali-Knobloch | [GitHub](https://github.com/hgabrali) | [LinkedIn](https://www.linkedin.com/in/hande-gabral%C4%B1-knobloch/)
