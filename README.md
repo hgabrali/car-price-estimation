@@ -170,6 +170,35 @@ Option B - add to notebook 06 init cell (already included):
 dbutils.library.restartPython()
 ```
 
+---
+
+### ⚠️ Known Compatibility Issues & Workarounds
+
+#### 1. PyCaret incompatibility with Python 3.12
+
+PyCaret (2024 release) does **not** support Python 3.12.x due to unresolved dependency conflicts in its dependency tree (e.g., `scikit-learn`, `numba`, `catboost` pinning issues). The library **only runs stably on Python 3.11.x**.
+
+**Workaround applied in this project:**
+The Databricks cluster runtime was configured to use **Python 3.11** at the project level, effectively downgrading from the default Python 3.12.3 environment. This was achieved by selecting a DBR (Databricks Runtime) version that ships with Python 3.11 (e.g., DBR 14.x LTS), rather than the latest Python 3.12-based runtime.
+
+> **Note for reproducibility:** If you encounter `ImportError` or version conflict errors when installing PyCaret, verify that your cluster is running **Python 3.11.x** (`python --version`). Do **not** use Python 3.12.x with PyCaret.
+
+#### 2. SHAP API change — `TreeExplainer` instead of `Explainer`
+
+In newer versions of SHAP (0.44+), using the generic `shap.Explainer` on tree-based models (Random Forest, Gradient Boosting, XGBoost) can raise `TypeError` or produce incorrect masker/background behavior.
+
+**Workaround applied in this project:**
+`shap.TreeExplainer` was used explicitly instead of the generic `shap.Explainer`. `TreeExplainer` is optimized for tree-based models, uses fast exact computation (no sampling), and is the correct API for sklearn `Pipeline` objects wrapping ensemble estimators.
+
+```python
+# ✅ Correct — used in this project
+explainer = shap.TreeExplainer(final_model.named_steps['model'])
+
+# ❌ Avoid — generic Explainer causes issues with tree models in newer SHAP
+# explainer = shap.Explainer(final_model)
+```
+
+
 ### 4. Configure MLflow Experiment
 
 The experiment path `/Users/hande.gabrali@gmail.com/car_price_pipeline` is created automatically.
