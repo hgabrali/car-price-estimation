@@ -1,12 +1,12 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # 05 - Preprocessing Dataset
-# MAGIC 
+# MAGIC
 # MAGIC ## Purpose
 # MAGIC Prepare data for modelling: define features and target, split train/test,
 # MAGIC and initialise the PyCaret regression environment. Log preprocessing steps
 # MAGIC with MLflow.
-# MAGIC 
+# MAGIC
 # MAGIC **Pipeline Position:** Step 5 of 7
 # MAGIC **Input:** `/tmp/car_price/featured_data.parquet`
 # MAGIC **Output:** Train/Test Parquet files + PyCaret environment
@@ -18,8 +18,11 @@
 
 # COMMAND ----------
 
-# %pip install pycaret==3.3.2 --quiet
-# dbutils.library.restartPython()
+# MAGIC %pip install pycaret==3.3.2 "numpy<2" --quiet
+
+# COMMAND ----------
+
+dbutils.library.restartPython()
 
 # COMMAND ----------
 
@@ -45,10 +48,10 @@ logger = logging.getLogger(__name__)
 from pycaret.regression import setup as pycaret_setup, get_config
 
 # Paths
-INPUT_PATH      = '/dbfs/tmp/car_price/featured_data.parquet'
-TRAIN_PATH      = '/tmp/car_price/train_data.parquet'
-TEST_PATH       = '/tmp/car_price/test_data.parquet'
-MLFLOW_EXP_NAME = '/Users/car-price-estimation/car_price_pipeline'
+FEAT_TABLE      = 'car_price_featured'
+TRAIN_TABLE     = 'car_price_train'
+TEST_TABLE      = 'car_price_test'
+MLFLOW_EXP_NAME = '/Users/hande.gabriali@gmail.com/car_price_pipeline'
 
 TARGET_COL = 'price'
 TEST_SIZE  = 0.2
@@ -63,11 +66,21 @@ logger.info('05_Preprocessing_Dataset started')
 
 # COMMAND ----------
 
-df = pd.read_parquet(INPUT_PATH)
-logger.info('Loaded featured data: %d rows x %d cols', *df.shape)
+# Try loading from pipeline Delta table; fall back to CSV if table doesn't exist
+FEAT_TABLE = 'car_price_featured'
+try:
+    df = spark.table(FEAT_TABLE).toPandas()
+    logger.info('Loaded from Delta table: %s', FEAT_TABLE)
+except Exception:
+    logger.warning('Delta table %s not found, loading from CSV as fallback', FEAT_TABLE)
+    CSV_PATH = "/Workspace/Users/hande.gabrali@gmail.com/car-price-estimation/Dataset/CarPrice_Assignment.csv"
+    df = pd.read_csv(CSV_PATH)
+    df.columns = df.columns.str.strip().str.lower().str.replace(r'[\s/]+', '_', regex=True)
+
+    # Add log_price for modelling
+    df['log_price'] = np.log1p(df['price'])
+    logger.info('Loaded featured data: %d rows x %d cols', *df.shape)
 print(f'Input shape: {df.shape}')
-print(f'Target column: {TARGET_COL}')
-print(f'Target stats:\n{df[TARGET_COL].describe().round(2)}')
 
 # COMMAND ----------
 
@@ -76,9 +89,10 @@ print(f'Target stats:\n{df[TARGET_COL].describe().round(2)}')
 
 # COMMAND ----------
 
-# Drop derived log_price to avoid leakage - keep original price as target
-COLS_TO_DROP = ['log_price']
+# Drop non-predictive & leakage columns
+COLS_TO_DROP = ['log_price', 'car_id', 'carname']
 df = df.drop(columns=[c for c in COLS_TO_DROP if c in df.columns])
+logger.info('Dropped columns: %s', COLS_TO_DROP)
 
 # Define feature columns
 FEATURE_COLS = [c for c in df.columns if c != TARGET_COL]
@@ -107,13 +121,11 @@ train_df[TARGET_COL] = y_train.values
 test_df = X_test.copy()
 test_df[TARGET_COL] = y_test.values
 
-logger.info('Train size: %d rows | Test size: %d rows', len(train_df), len(test_df))
 print(f'Train: {train_df.shape} | Test: {test_df.shape}')
 
-# Persist splits
-train_df.to_parquet(f'/dbfs{TRAIN_PATH}', index=False)
-test_df.to_parquet(f'/dbfs{TEST_PATH}', index=False)
-logger.info('Train/Test splits saved.')
+spark.createDataFrame(train_df).write.mode('overwrite').option("mergeSchema", "true").saveAsTable(TRAIN_TABLE)
+spark.createDataFrame(test_df).write.mode('overwrite').option("mergeSchema", "true").saveAsTable(TEST_TABLE)
+logger.info('Train/Test splits saved to Delta tables.')
 
 # COMMAND ----------
 
@@ -122,42 +134,8 @@ logger.info('Train/Test splits saved.')
 
 # COMMAND ----------
 
-# Set MLflow experiment
-mlflow.set_experiment(MLFLOW_EXP_NAME)
-
-with mlflow.start_run(run_name='05_Preprocessing') as run:
-    logger.info('MLflow run started: %s', run.info.run_id)
-    
-    # PyCaret setup - let PyCaret handle internal preprocessing
-    pycaret_env = pycaret_setup(
-        data             = train_df,
-        target           = TARGET_COL,
-        session_id       = RANDOM_STATE,
-        train_size       = 1.0,           # already split; pass full train set
-        normalize        = True,
-        normalize_method = 'zscore',
-        transformation   = True,          # Yeo-Johnson to reduce skewness
-        transformation_method = 'yeo-johnson',
-        remove_multicollinearity = True,
-        multicollinearity_threshold = 0.9,
-        fix_imbalance    = False,         # regression task
-        feature_selection = False,        # handled manually
-        log_experiment   = True,
-        experiment_name  = MLFLOW_EXP_NAME,
-        verbose          = False
-    )
-    
-    # Log preprocessing parameters
-    mlflow.log_param('train_size',    len(train_df))
-    mlflow.log_param('test_size',     len(test_df))
-    mlflow.log_param('n_features',    len(FEATURE_COLS))
-    mlflow.log_param('target_col',    TARGET_COL)
-    mlflow.log_param('random_state',  RANDOM_STATE)
-    mlflow.log_param('normalize',     True)
-    mlflow.log_param('transformation','yeo-johnson')
-    
-    logger.info('PyCaret environment initialised successfully.')
-    print('MLflow Run ID:', run.info.run_id)
+pycaret_env = pycaret_setup(data=train_df, target=TARGET_COL, session_id=RANDOM_STATE, normalize=True, verbose=False)
+logger.info('PyCaret environment initialised')
 
 # COMMAND ----------
 
@@ -178,15 +156,15 @@ print(f'Transformed feature names: {X_transformed.columns.tolist()}')
 # COMMAND ----------
 
 print('=== PREPROCESSING SUMMARY ===')
-print(f'Total samples:      {len(df):,}')
-print(f'Training samples:   {len(train_df):,} ({(1-TEST_SIZE)*100:.0f}%)')
-print(f'Test samples:       {len(test_df):,} ({TEST_SIZE*100:.0f}%)')
-print(f'Feature count:      {len(FEATURE_COLS)}')
-print(f'Target:             {TARGET_COL}')
-print(f'Train Parquet:      {TRAIN_PATH}')
-print(f'Test Parquet:       {TEST_PATH}')
-print(f'MLflow Experiment:  {MLFLOW_EXP_NAME}')
+print(f'Total samples:    {len(df):,}')
+print(f'Training samples: {len(train_df):,} ({(1-TEST_SIZE)*100:.0f}%)')
+print(f'Test samples:     {len(test_df):,} ({TEST_SIZE*100:.0f}%)')
+print(f'Feature count:    {len(FEATURE_COLS)}')
+print(f'Target:           {TARGET_COL}')
+print(f'Train Table:      {TRAIN_TABLE}')
+print(f'Test Table:       {TEST_TABLE}')
+print(f'MLflow Experiment: {MLFLOW_EXP_NAME}')
 
 # COMMAND ----------
 
-dbutils.notebook.exit(TRAIN_PATH)
+dbutils.notebook.exit(TRAIN_TABLE)
