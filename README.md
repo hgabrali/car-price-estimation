@@ -1,6 +1,6 @@
 # Car Price Estimation System
 
-<img width="1024" height="1024" alt="image" src="https://github.com/user-attachments/assets/2beebc0c-9160-472e-89f2-a1084d3ef93e" />
+<img width="1280" height="400" alt="Car Price Estimation System - ML Pipeline Banner" src="https://github.com/user-attachments/assets/16323393-9858-4710-87bf-737b664af739" />
 
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
