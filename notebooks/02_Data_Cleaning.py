@@ -1,16 +1,16 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # 02 - Data Cleaning
-# MAGIC 
+# MAGIC
 # MAGIC ## Purpose
 # MAGIC Read the raw Parquet file produced by notebook 01, perform comprehensive data
 # MAGIC cleaning using Pandas, and persist the cleaned dataset for EDA and feature
 # MAGIC engineering.
-# MAGIC 
+# MAGIC
 # MAGIC **Pipeline Position:** Step 2 of 7
-# MAGIC 
+# MAGIC
 # MAGIC **Input:**  `/tmp/car_price/raw_data.parquet`
-# MAGIC 
+# MAGIC
 # MAGIC **Output:** `/tmp/car_price/clean_data.parquet`
 
 # COMMAND ----------
@@ -23,18 +23,15 @@
 import logging
 import re
 from datetime import datetime
-
 import numpy as np
 import pandas as pd
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-# Paths
-INPUT_PATH  = "/dbfs/tmp/car_price/raw_data.parquet"
-OUTPUT_PATH = "/tmp/car_price/clean_data.parquet"
-DBFS_OUTPUT = f"dbfs:{OUTPUT_PATH}"
-
+# Using Delta tables instead of DBFS
+RAW_TABLE    = "car_price_raw"
+CLEAN_TABLE  = "car_price_clean"
 CURRENT_YEAR = datetime.now().year
 logger.info("02_Data_Cleaning started")
 
@@ -45,7 +42,7 @@ logger.info("02_Data_Cleaning started")
 
 # COMMAND ----------
 
-df = pd.read_parquet(INPUT_PATH)
+df = spark.table(RAW_TABLE).toPandas()
 logger.info("Loaded raw data: %d rows x %d cols", *df.shape)
 print(f"Raw shape: {df.shape}")
 print(df.dtypes)
@@ -162,25 +159,25 @@ print(f"Shape after deduplication: {df.shape}")
 
 # COMMAND ----------
 
-def remove_outliers_iqr(df: pd.DataFrame, col: str,
-                        lower_q: float = 0.01,
-                        upper_q: float = 0.99) -> pd.DataFrame:
+import warnings
+warnings.filterwarnings('ignore')
+
+def remove_outliers_iqr(df, col, lower_q=0.01, upper_q=0.99):
     """Remove rows outside [lower_q, upper_q] quantile range."""
-    q_low  = df[col].quantile(lower_q)
+    q_low = df[col].quantile(lower_q)
     q_high = df[col].quantile(upper_q)
     before = len(df)
     df = df[(df[col] >= q_low) & (df[col] <= q_high)]
-    logger.info("Outlier removal on '%s': removed %d rows (kept %d).",
-                col, before - len(df), len(df))
+    logger.info("Outlier removal on '%s': removed %d rows (kept %d).", col, before - len(df), len(df))
     return df
 
-# Apply to target and key numeric features
-for col_name in ["price", "mileage", "volume"]:
-    if col_name in df.columns:
-        df = remove_outliers_iqr(df, col_name)
+# Apply IQR-based outlier removal to key numeric columns
+outlier_cols = ["price", "enginesize", "horsepower", "curbweight"]
+for c in outlier_cols:
+    df = remove_outliers_iqr(df, c)
 
+logger.info("Outlier rows removed: %d", 205 - len(df))
 print(f"Shape after outlier removal: {df.shape}")
-print(df[["price", "mileage", "volume"]].describe().round(2))
 
 # COMMAND ----------
 
@@ -189,32 +186,35 @@ print(df[["price", "mileage", "volume"]].describe().round(2))
 
 # COMMAND ----------
 
-# Year sanity check: keep only reasonable production years
-if "year" in df.columns:
-    valid_mask = df["year"].between(1990, CURRENT_YEAR)
-    removed = (~valid_mask).sum()
-    df = df[valid_mask]
-    logger.info("Removed %d rows with implausible year values.", removed)
+# Extract brand name from carname
+df["brand"] = df["carname"].str.split().str[0].str.lower().str.strip()
 
-# Segment column: often manually entered; normalise case & trim
-if "segment" in df.columns:
-    df["segment"] = df["segment"].str.title().str.strip()
-    # Collapse rare segments (< 10 occurrences) into 'Other'
-    seg_counts = df["segment"].value_counts()
-    rare_segs  = seg_counts[seg_counts < 10].index
-    df["segment"] = df["segment"].where(~df["segment"].isin(rare_segs), "Other")
-    logger.info("Rare segments collapsed: %s", rare_segs.tolist())
+# Fix known brand name typos in the dataset
+brand_fixes = {
+    "maxda": "mazda",
+    "porcshce": "porsche",
+    "toyouta": "toyota",
+    "vokswagen": "volkswagen",
+    "vw": "volkswagen",
+    "alfa-romero": "alfa-romeo",
+    "Nissan": "nissan"
+}
+df["brand"] = df["brand"].replace(brand_fixes)
 
-# Standardise fuel type values
-if "fuel_type" in df.columns:
-    df["fuel_type"] = df["fuel_type"].str.title()
+# Standardise categorical values: strip and lowercase
+cat_cols = df.select_dtypes(include="object").columns
+for col in cat_cols:
+    df[col] = df[col].str.strip().str.lower()
 
-# Standardise transmission values
-if "transmission" in df.columns:
-    df["transmission"] = df["transmission"].str.title()
+# Remove car_id (not a predictor)
+if "car_id" in df.columns:
+    df = df.drop(columns=["car_id"])
+    logger.info("Dropped car_id column (not a predictor).")
 
-print("Unique segments:", df["segment"].unique() if "segment" in df.columns else "N/A")
-print("Unique fuel types:", df["fuel_type"].unique() if "fuel_type" in df.columns else "N/A")
+print(f"Unique brands ({df['brand'].nunique()}): {sorted(df['brand'].unique())}")
+print(f"Unique fuel types: {df['fueltype'].unique().tolist()}")
+print(f"Unique car bodies: {df['carbody'].unique().tolist()}")
+print(f"Shape after domain cleaning: {df.shape}")
 
 # COMMAND ----------
 
@@ -240,14 +240,10 @@ df.head(5)
 
 # COMMAND ----------
 
-# Save to DBFS as Parquet
-df.to_parquet(f"/dbfs{OUTPUT_PATH}", index=False)
-logger.info("Cleaned data saved to: %s", DBFS_OUTPUT)
-
-# Also save as Delta table for easy SQL access
+# Save cleaned data as Delta table
 spark_df = spark.createDataFrame(df)
-spark_df.write.mode("overwrite").saveAsTable("car_price_clean")
-logger.info("Delta table 'car_price_clean' created/updated.")
-
+spark_df.write.mode("overwrite").saveAsTable(CLEAN_TABLE)
+logger.info("Delta table '%s' created/updated.", CLEAN_TABLE)
 print(f"Cleaned dataset: {df.shape[0]:,} rows x {df.shape[1]} columns")
-dbutils.notebook.exit(OUTPUT_PATH)
+print(f"Saved to Delta table: {CLEAN_TABLE}")
+dbutils.notebook.exit(CLEAN_TABLE)
