@@ -1,13 +1,18 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # 04 - Feature Engineering
-# MAGIC 
+# MAGIC
 # MAGIC ## Purpose
 # MAGIC Create new features and transform existing ones to improve model performance.
-# MAGIC 
+# MAGIC
 # MAGIC **Pipeline Position:** Step 4 of 7
 # MAGIC **Input:** `/tmp/car_price/clean_data.parquet`
 # MAGIC **Output:** `/tmp/car_price/featured_data.parquet`
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC
 
 # COMMAND ----------
 
@@ -27,8 +32,8 @@ from datetime import datetime
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger(__name__)
 
-INPUT_PATH  = '/dbfs/tmp/car_price/clean_data.parquet'
-OUTPUT_PATH = '/tmp/car_price/featured_data.parquet'
+CLEAN_TABLE   = 'car_price_clean'
+FEAT_TABLE    = 'car_price_featured'
 CURRENT_YEAR = datetime.now().year
 logger.info('04_Feature_Engineering started')
 
@@ -39,91 +44,121 @@ logger.info('04_Feature_Engineering started')
 
 # COMMAND ----------
 
-df = pd.read_parquet(INPUT_PATH)
+df = spark.table(CLEAN_TABLE).toPandas()
 logger.info('Loaded clean data: %d rows x %d cols', *df.shape)
 print(f'Input shape: {df.shape}')
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 3. Feature: Car Age
+# MAGIC ## 3. Feature: Power-to-Weight Ratio & Engine Efficiency
 
 # COMMAND ----------
 
-def add_car_age(df, current_year=CURRENT_YEAR):
-    '''Derive car age from model year.'''
-    if 'year' in df.columns:
-        df['car_age'] = current_year - df['year']
-        df['car_age'] = df['car_age'].clip(lower=0)
-        logger.info('Created car_age feature (current_year=%d)', current_year)
-    return df
+# Power-to-weight ratio (horsepower per unit of curbweight)
+if 'horsepower' in df.columns and 'curbweight' in df.columns:
+    df['power_to_weight'] = df['horsepower'] / df['curbweight']
+    logger.info('Created power_to_weight feature')
 
-df = add_car_age(df)
-print('Car age stats:')
-print(df['car_age'].describe().round(2))
+# Engine displacement efficiency (horsepower per engine cc)
+if 'horsepower' in df.columns and 'enginesize' in df.columns:
+    df['hp_per_cc'] = df['horsepower'] / (df['enginesize'] + 1)
+    logger.info('Created hp_per_cc feature')
 
-# COMMAND ----------
+# Fuel efficiency composite (average of city and highway mpg)
+if 'citympg' in df.columns and 'highwaympg' in df.columns:
+    df['avg_mpg'] = (df['citympg'] + df['highwaympg']) / 2
+    logger.info('Created avg_mpg feature')
 
-# MAGIC %md
-# MAGIC ## 4. Feature: Mileage Bins
-
-# COMMAND ----------
-
-def add_mileage_bins(df):
-    '''Bin mileage into ordered categories.'''
-    if 'mileage' in df.columns:
-        bins   = [0, 20000, 50000, 100000, 150000, 200000, float('inf')]
-        labels = ['Very Low', 'Low', 'Medium', 'High', 'Very High', 'Extreme']
-        df['mileage_bin'] = pd.cut(df['mileage'], bins=bins, labels=labels, right=True)
-        df['mileage_bin'] = df['mileage_bin'].astype(str)
-        logger.info('Created mileage_bin feature')
-    return df
-
-df = add_mileage_bins(df)
-print('Mileage bin distribution:')
-print(df['mileage_bin'].value_counts())
+print('New feature stats:')
+for feat in ['power_to_weight', 'hp_per_cc', 'avg_mpg']:
+    if feat in df.columns:
+        print(f'  {feat}: mean={df[feat].mean():.4f}, std={df[feat].std():.4f}')
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Feature: Age Group
+# MAGIC ## 4. Feature: Horsepower Bins & Engine Size Category
 
 # COMMAND ----------
 
-def add_age_group(df):
-    '''Bin car age into descriptive groups.'''
-    if 'car_age' in df.columns:
-        bins   = [0, 2, 5, 10, 15, 20, float('inf')]
-        labels = ['Brand New', 'Nearly New', 'Recent', 'Used', 'Old', 'Classic']
-        df['age_group'] = pd.cut(df['car_age'], bins=bins, labels=labels, right=True)
-        df['age_group'] = df['age_group'].astype(str)
-        logger.info('Created age_group feature')
-    return df
+# Horsepower bins
+if 'horsepower' in df.columns:
+    bins = [0, 70, 100, 150, 200, float('inf')]
+    labels = ['Low', 'Medium', 'High', 'Very High', 'Premium']
+    df['hp_bin'] = pd.cut(df['horsepower'], bins=bins, labels=labels, right=True).astype(str)
+    logger.info('Created hp_bin feature')
 
-df = add_age_group(df)
-print('Age group distribution:')
-print(df['age_group'].value_counts())
+# Engine size category
+if 'enginesize' in df.columns:
+    bins = [0, 100, 150, 200, float('inf')]
+    labels = ['Small', 'Medium', 'Large', 'Very Large']
+    df['engine_category'] = pd.cut(df['enginesize'], bins=bins, labels=labels, right=True).astype(str)
+    logger.info('Created engine_category feature')
+
+print('HP bin distribution:')
+print(df['hp_bin'].value_counts() if 'hp_bin' in df.columns else 'hp_bin not created')
+print('\nEngine category distribution:')
+print(df['engine_category'].value_counts() if 'engine_category' in df.columns else 'engine_category not created')
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Feature: Price Per Year (Interaction)
+# MAGIC ## 5. Feature: Car Body & Drive Type Aggregations
 
 # COMMAND ----------
 
-def add_interaction_features(df):
-    '''Create meaningful interaction features.'''
-    # Mileage per year of car age (usage intensity)
-    if 'mileage' in df.columns and 'car_age' in df.columns:
-        df['mileage_per_year'] = df['mileage'] / (df['car_age'] + 1)
-        logger.info('Created mileage_per_year feature')
-    # Engine volume efficiency proxy
-    if 'volume' in df.columns:
-        df['volume_log'] = np.log1p(df['volume'])
-        logger.info('Created volume_log feature')
-    return df
+# Brand mean price encoding (target-based feature)
+if 'brand' in df.columns:
+    brand_avg_price = df.groupby('brand')['price'].transform('mean')
+    df['brand_avg_price'] = brand_avg_price
+    logger.info('Created brand_avg_price feature')
 
-df = add_interaction_features(df)
+# Car body popularity score
+if 'carbody' in df.columns:
+    body_counts = df['carbody'].value_counts(normalize=True)
+    df['carbody_popularity'] = df['carbody'].map(body_counts)
+    logger.info('Created carbody_popularity feature')
+
+# Drive wheel frequency encoding
+if 'drivewheel' in df.columns:
+    dw_counts = df['drivewheel'].value_counts(normalize=True)
+    df['drivewheel_freq'] = df['drivewheel'].map(dw_counts)
+    logger.info('Created drivewheel_freq feature')
+
+print('Encoding features stats:')
+for feat in ['brand_avg_price', 'carbody_popularity', 'drivewheel_freq']:
+    if feat in df.columns:
+        print(f'  {feat}: mean={df[feat].mean():.4f}, std={df[feat].std():.4f}')
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 6. Feature: Interaction & Composite Features
+
+# COMMAND ----------
+
+# Compression per cylinder (interaction feature)
+if 'compressionratio' in df.columns and 'cylindernumber' in df.columns:
+    cyl_map = {'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'eight': 8, 'twelve': 12}
+    df['cyl_num'] = df['cylindernumber'].map(cyl_map).fillna(4)
+    df['compression_per_cyl'] = df['compressionratio'] / df['cyl_num']
+    logger.info('Created compression_per_cyl feature')
+
+# Bore-stroke ratio (engine geometry)
+if 'boreratio' in df.columns and 'stroke' in df.columns:
+    df['bore_stroke_ratio'] = df['boreratio'] / (df['stroke'] + 0.001)
+    logger.info('Created bore_stroke_ratio feature')
+
+# Price per curb weight (value metric)
+if 'price' in df.columns and 'curbweight' in df.columns:
+    df['price_per_weight'] = df['price'] / df['curbweight']
+    logger.info('Created price_per_weight feature')
+
+print('Interaction feature stats:')
+for feat in ['compression_per_cyl', 'bore_stroke_ratio', 'price_per_weight']:
+    if feat in df.columns:
+        print(f'  {feat}: mean={df[feat].mean():.4f}, std={df[feat].std():.4f}')
 
 # COMMAND ----------
 
@@ -132,19 +167,26 @@ df = add_interaction_features(df)
 
 # COMMAND ----------
 
-def collapse_rare_categories(df, col, threshold=20, replacement='Other'):
+def collapse_rare_categories(df, col, threshold=5, replacement='other'):
     '''Replace categories with fewer than threshold occurrences.'''
     if col not in df.columns:
         return df
     counts = df[col].value_counts()
-    rare   = counts[counts < threshold].index
+    rare = counts[counts < threshold].index
     df[col] = df[col].where(~df[col].isin(rare), replacement)
-    logger.info('Collapsed %d rare values in %s into Other', len(rare), col)
+    logger.info('Collapsed %d rare values in %s into other', len(rare), col)
     return df
 
-for col_name in ['make', 'model', 'color', 'drive_unit']:
+# Collapse rare categories in the actual dataset columns
+for col_name in ['brand', 'enginetype', 'fuelsystem', 'cylindernumber']:
     if col_name in df.columns:
-        df = collapse_rare_categories(df, col_name, threshold=20)
+        df = collapse_rare_categories(df, col_name, threshold=5)
+
+# Print distributions of collapsed columns
+for col_name in ['brand', 'enginetype', 'fuelsystem', 'cylindernumber']:
+    if col_name in df.columns:
+        print(f'\n{col_name} distribution after collapsing:')
+        print(df[col_name].value_counts())
 
 # COMMAND ----------
 
@@ -192,13 +234,9 @@ display(df.head())
 
 # COMMAND ----------
 
-df.to_parquet(f'/dbfs{OUTPUT_PATH}', index=False)
-logger.info('Featured data saved to: %s', OUTPUT_PATH)
-
-# Also overwrite Delta table
 spark_df = spark.createDataFrame(df)
-spark_df.write.mode('overwrite').saveAsTable('car_price_featured')
-logger.info('Delta table car_price_featured created/updated.')
-
+spark_df.write.mode('overwrite').saveAsTable(FEAT_TABLE)
+logger.info("Delta table '%s' created/updated.", FEAT_TABLE)
 print(f'Saved featured dataset: {df.shape[0]:,} rows x {df.shape[1]} columns')
-dbutils.notebook.exit(OUTPUT_PATH)
+print(f'Saved to Delta table: {FEAT_TABLE}')
+dbutils.notebook.exit(FEAT_TABLE)
