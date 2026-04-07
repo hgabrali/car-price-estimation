@@ -1,14 +1,23 @@
 # Databricks notebook source
+import pandas as pd
+CSV_PATH = "/Workspace/Users/hande.gabrali@gmail.com/car-price-estimation/Dataset/CarPrice_Assignment.csv"
+pdf = pd.read_csv(CSV_PATH)
+sdf = spark.createDataFrame(pdf)
+sdf.write.mode("overwrite").saveAsTable("car_price_assignment")
+print("car_price_assignment created:", pdf.shape[0], "rows x", pdf.shape[1], "cols")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # 01 - Data Gathering
-# MAGIC 
+# MAGIC
 # MAGIC ## Purpose
 # MAGIC Load the `car_price_assignment` dataset from the Databricks table using PySpark,
 # MAGIC display schema and basic statistics, then persist it as a Parquet file on DBFS for
 # MAGIC downstream notebooks.
-# MAGIC 
+# MAGIC
 # MAGIC **Pipeline Position:** Step 1 of 7
-# MAGIC 
+# MAGIC
 # MAGIC **Output:** `/dbfs/tmp/car_price/raw_data.parquet`
 
 # COMMAND ----------
@@ -39,12 +48,10 @@ logger.info("01_Data_Gathering notebook started at %s", datetime.now())
 # COMMAND ----------
 
 # Configuration
-TABLE_NAME      = "car_price_assignment"
-OUTPUT_PATH     = "/tmp/car_price/raw_data.parquet"
-DBFS_OUTPUT     = f"dbfs:{OUTPUT_PATH}"
-
-dbutils.fs.mkdirs("/tmp/car_price/")
-logger.info("Output directory ensured: /tmp/car_price/")
+TABLE_NAME   = "car_price_assignment"
+# Using Delta tables instead of DBFS (DBFS disabled in Serverless)
+RAW_TABLE    = "car_price_raw"
+logger.info("Configuration set. Using Delta tables for storage.")
 
 # COMMAND ----------
 
@@ -93,11 +100,9 @@ display(sdf.describe())
 print("=" * 60)
 print("MISSING VALUES PER COLUMN")
 print("=" * 60)
-missing_counts = sdf.select([
-    count(when(col(c).isNull() | isnan(c), c)).alias(c)
-    for c in sdf.columns
-])
-display(missing_counts)
+import pandas as pd
+pdf = sdf.toPandas()
+print(pdf.isnull().sum())
 
 # COMMAND ----------
 
@@ -113,22 +118,14 @@ display(sdf.limit(10))
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Persist as Parquet
+# MAGIC ## 7. Persist as Parquet - Delta Table yapabilirisn
 
 # COMMAND ----------
 
-logger.info("Writing Parquet to: %s", DBFS_OUTPUT)
-(
-    sdf
-    .coalesce(1)
-    .write
-    .mode("overwrite")
-    .parquet(DBFS_OUTPUT)
-)
-logger.info("Parquet write complete.")
-
-file_list = dbutils.fs.ls("/tmp/car_price/")
-print("Files written:", [f.name for f in file_list])
+logger.info("Writing raw data to Delta table: %s", RAW_TABLE)
+sdf.write.mode("overwrite").saveAsTable(RAW_TABLE)
+logger.info("Delta table write complete.")
+print(f"Raw data saved to Delta table: {RAW_TABLE}")
 
 # COMMAND ----------
 
@@ -137,4 +134,4 @@ print("Files written:", [f.name for f in file_list])
 
 # COMMAND ----------
 
-dbutils.notebook.exit(OUTPUT_PATH)
+dbutils.notebook.exit(RAW_TABLE)
