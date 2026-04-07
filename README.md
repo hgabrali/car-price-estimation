@@ -212,6 +212,39 @@ tasks:
 
 ![Databricks Workflow Runs](https://github.com/user-attachments/assets/112009ad-98fb-4a33-9859-03efda202bb7)
 
+#### Databricks Job Run History – Technical Analysis
+
+The image above shows the **Run History** of a Databricks Workflow consisting of 7 sequential tasks:
+`Gathering → Cleaning → EDA → Feature_Engineering → Preprocessing → Model_Training → Valuation`
+
+**Color Legend:**
+
+| Color | Meaning |
+|-------|---------|
+| 🟩 Green (solid) | Succeeded |
+| 🟥 Dark Red / Hatched | Failed |
+| 🌸 Light Pink | Skipped (upstream task failed) |
+
+**Problems Identified:**
+
+1. **Cascading Task Failures (Upstream Dependency Failures)** — In the early runs, `Gathering` and `Cleaning` tasks failed (dark red/hatched), causing all downstream tasks to be skipped (light pink). This is a classic upstream dependency failure cascade — when a parent task fails, all child tasks are blocked and marked as skipped.
+
+2. **Intermittent / Flaky Task Failures** — Tasks like `Preprocessing` and `Model_Training` show a repeated pattern of alternating failures and successes, indicating non-deterministic or environment-sensitive errors — possibly caused by cluster startup issues, data availability timing (race conditions), or resource contention (OOM errors, timeouts).
+
+3. **Increasing Run Duration Over Time** — The bar chart (Run total duration) shows a progressive increase from fast-failing runs to stabilization around 3m 59s – 7m 59s. Early runs failed fast (short duration = early exit on failure); later runs ran longer as more tasks succeeded — consistent with iterative debugging.
+
+4. **Partial Pipeline Success in Middle Runs** — Several runs show a mixed state where some tasks succeed (green) while others fail (hatched), indicating that fixes were applied incrementally per task.
+
+**Solutions Applied (Inferred from Run History):**
+
+- **Bug fixes applied task-by-task:** The gradual shift from failed → succeeded (left to right in the timeline) across each task row indicates iterative debugging and patching.
+- **Dependency/data source fixes for Gathering & Cleaning:** Once these foundational tasks turned green, all downstream tasks were unblocked.
+- **Cluster/environment stabilization:** The reduction in `Preprocessing` and `Model_Training` failures over time suggests cluster configuration or library dependency issues were resolved.
+- **Final stable run (rightmost green bar):** The last run shows a fully successful end-to-end pipeline execution — all tasks from `Gathering` through `Valuation` completed without error.
+
+> **Summary:** The pipeline went through a debugging and stabilization lifecycle: starting with critical upstream failures causing full pipeline skips, progressing through intermittent per-task failures during incremental fixes, and ultimately reaching a fully green end-to-end run after resolving data ingestion, environment, and task-level code issues.
+
+![Databricks Job Run History](https://github.com/user-attachments/assets/e1542541-5795-411f-80da-22069c64774f)
 
 ### Valuation via Widget
 
