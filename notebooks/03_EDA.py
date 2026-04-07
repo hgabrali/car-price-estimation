@@ -1,11 +1,11 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # 03 - Exploratory Data Analysis (EDA)
-# MAGIC 
+# MAGIC
 # MAGIC ## Purpose
 # MAGIC Perform comprehensive EDA on the cleaned dataset to uncover patterns,
 # MAGIC distributions, correlations, and business insights for feature engineering.
-# MAGIC 
+# MAGIC
 # MAGIC **Pipeline Position:** Step 3 of 7
 # MAGIC **Input:** `/tmp/car_price/clean_data.parquet`
 # MAGIC **Output:** EDA insights (in-notebook) + cleaned DataFrame passed forward
@@ -33,8 +33,7 @@ logger = logging.getLogger(__name__)
 sns.set_theme(style='whitegrid', palette='muted', font_scale=1.1)
 plt.rcParams['figure.dpi'] = 120
 
-INPUT_PATH  = '/dbfs/tmp/car_price/clean_data.parquet'
-OUTPUT_PATH = '/tmp/car_price/clean_data.parquet'
+CLEAN_TABLE = 'car_price_clean'
 logger.info('03_EDA started')
 
 # COMMAND ----------
@@ -44,7 +43,7 @@ logger.info('03_EDA started')
 
 # COMMAND ----------
 
-df = pd.read_parquet(INPUT_PATH)
+df = spark.table(CLEAN_TABLE).toPandas()
 logger.info('Loaded clean data: %d rows x %d cols', *df.shape)
 print(f'Shape: {df.shape}')
 display(df.head())
@@ -146,91 +145,99 @@ plt.show()
 
 # COMMAND ----------
 
-# Price by Make (Top 15)
-if 'make' in df.columns:
-    top_makes = df['make'].value_counts().nlargest(15).index
-    fig, ax = plt.subplots(figsize=(14, 6))
-    order = (df[df['make'].isin(top_makes)]
-             .groupby('make')['price'].median()
-             .sort_values(ascending=False).index)
-    sns.boxplot(data=df[df['make'].isin(top_makes)],
-                x='make', y='price', order=order, ax=ax, palette='Blues_d')
-    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right')
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'${x:,.0f}'))
-    ax.set_title('Price Distribution by Make (Top 15)', fontsize=13, fontweight='bold')
-    plt.tight_layout()
-    plt.show()
+# Extract brand from carname for analysis
+df['brand'] = df['carname'].str.split().str[0].str.lower()
+
+# Price by Brand (Top 10)
+top_brands = df['brand'].value_counts().nlargest(10).index
+fig, ax = plt.subplots(figsize=(14, 6))
+order = (df[df['brand'].isin(top_brands)]
+         .groupby('brand')['price'].median()
+         .sort_values(ascending=False).index)
+sns.boxplot(data=df[df['brand'].isin(top_brands)], x='brand',
+            y='price', order=order, ax=ax, palette='Blues_d')
+ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right')
+ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'${x:,.0f}'))
+ax.set_title('Price Distribution by Brand (Top 10)', fontsize=13, fontweight='bold')
+plt.tight_layout()
+plt.show()
 
 # COMMAND ----------
 
-# Mileage vs Price
-if 'mileage' in df.columns:
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.scatter(df['mileage'], df['price'], alpha=0.3, color='#E91E63', s=15)
-    ax.set_xlabel('Mileage (km)')
-    ax.set_ylabel('Price (USD)')
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'${x:,.0f}'))
-    ax.set_title('Mileage vs Price', fontsize=13, fontweight='bold')
-    plt.tight_layout()
-    plt.show()
-    print(f'Pearson corr (mileage, price): {df["mileage"].corr(df["price"]):.3f}')
+# Horsepower vs Price
+fig, ax = plt.subplots(figsize=(10, 6))
+ax.scatter(df['horsepower'], df['price'], alpha=0.4, color='#E91E63', s=20)
+ax.set_xlabel('Horsepower')
+ax.set_ylabel('Price (USD)')
+ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'${x:,.0f}'))
+ax.set_title('Horsepower vs Price', fontsize=13, fontweight='bold')
+plt.tight_layout()
+plt.show()
+print(f'Pearson corr (horsepower, price): {df["horsepower"].corr(df["price"]):.3f}')
 
 # COMMAND ----------
 
-# Price by Condition
-if 'condition' in df.columns:
-    fig, ax = plt.subplots(figsize=(10, 5))
-    order = df.groupby('condition')['price'].median().sort_values(ascending=False).index
-    sns.violinplot(data=df, x='condition', y='price', order=order, ax=ax,
-                   palette='Set2', inner='quartile')
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'${x:,.0f}'))
-    ax.set_title('Price Distribution by Condition', fontsize=13, fontweight='bold')
-    plt.tight_layout()
-    plt.show()
+# Price by Car Body Type
+fig, ax = plt.subplots(figsize=(10, 5))
+order = df.groupby('carbody')['price'].median().sort_values(ascending=False).index
+sns.violinplot(data=df, x='carbody', y='price', order=order, ax=ax,
+               palette='Set2', inner='quartile')
+ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'${x:,.0f}'))
+ax.set_title('Price Distribution by Car Body Type', fontsize=13, fontweight='bold')
+ax.set_xlabel('Car Body Type')
+ax.set_ylabel('Price (USD)')
+plt.tight_layout()
+plt.show()
 
 # COMMAND ----------
 
-# Price by Segment
-if 'segment' in df.columns:
-    fig, ax = plt.subplots(figsize=(12, 5))
-    order = df.groupby('segment')['price'].median().sort_values(ascending=False).index
-    sns.barplot(data=df, x='segment', y='price', order=order, ax=ax,
-                estimator=np.median, palette='viridis', ci=None)
-    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right')
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'${x:,.0f}'))
-    ax.set_title('Median Price by Segment', fontsize=13, fontweight='bold')
-    plt.tight_layout()
-    plt.show()
+# Median Price by Drive Wheel Type
+fig, ax = plt.subplots(figsize=(10, 5))
+order = df.groupby('drivewheel')['price'].median().sort_values(ascending=False).index
+sns.barplot(data=df, x='drivewheel', y='price', order=order, ax=ax,
+            estimator=np.median, palette='viridis', ci=None)
+ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'${x:,.0f}'))
+ax.set_title('Median Price by Drive Wheel Type', fontsize=13, fontweight='bold')
+ax.set_xlabel('Drive Wheel')
+ax.set_ylabel('Median Price (USD)')
+for p in ax.patches:
+    ax.annotate(f'${p.get_height():,.0f}', (p.get_x() + p.get_width() / 2., p.get_height()),
+                ha='center', va='bottom', fontweight='bold')
+plt.tight_layout()
+plt.show()
 
 # COMMAND ----------
 
-# Price trend over Year
-if 'year' in df.columns:
-    yearly = df.groupby('year')['price'].median().reset_index()
-    fig, ax = plt.subplots(figsize=(12, 5))
-    ax.plot(yearly['year'], yearly['price'], marker='o', color='#3F51B5', linewidth=2)
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'${x:,.0f}'))
-    ax.set_xlabel('Model Year')
-    ax.set_ylabel('Median Price (USD)')
-    ax.set_title('Median Car Price by Model Year', fontsize=13, fontweight='bold')
-    plt.tight_layout()
-    plt.show()
+# Engine Size vs Price (with Fuel Type hue)
+fig, ax = plt.subplots(figsize=(12, 5))
+for ft, color in zip(['gas', 'diesel'], ['#3F51B5', '#E91E63']):
+    subset = df[df['fueltype'] == ft]
+    ax.scatter(subset['enginesize'], subset['price'], alpha=0.5, label=ft, color=color)
+ax.set_xlabel('Engine Size (cc)')
+ax.set_ylabel('Price (USD)')
+ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'${x:,.0f}'))
+ax.set_title('Engine Size vs Price by Fuel Type', fontsize=13, fontweight='bold')
+ax.legend(title='Fuel Type')
+plt.tight_layout()
+plt.show()
+print(f'Pearson corr (enginesize, price): {df["enginesize"].corr(df["price"]):.3f}')
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ## 8. Key Insights
-# MAGIC 
+# MAGIC
 # MAGIC | Insight | Detail |
 # MAGIC |---------|--------|
-# MAGIC | **Price distribution** | Right-skewed; log transformation recommended |
-# MAGIC | **Make impact** | Premium brands show significantly higher median prices |
-# MAGIC | **Mileage** | Negative correlation with price as expected |
-# MAGIC | **Condition** | Strong predictor; newer condition commands premium |
-# MAGIC | **Model year** | Recent years correlate with higher prices |
-# MAGIC | **Segment** | SUV/Luxury segments show highest median prices |
-# MAGIC | **Fuel type** | Electric/Hybrid vehicles priced higher on average |
+# MAGIC | **Price distribution** | Right-skewed (skewness=1.625); log transformation recommended for modelling |
+# MAGIC | **Curbweight** | Strongest positive correlation with price - heavier cars tend to be more expensive |
+# MAGIC | **Engine size** | Strong positive correlation with price - larger engines command premium |
+# MAGIC | **Horsepower** | Positive correlation; higher performance increases value |
+# MAGIC | **Fuel efficiency** | citympg/highwaympg negatively correlated with price (economy vs premium trade-off) |
+# MAGIC | **Carbody** | Sedans dominate (47%); convertibles and hardtops are rare but premium |
+# MAGIC | **Drive wheel** | FWD most common (59%); RWD associated with higher-priced vehicles |
+# MAGIC | **Fuel type** | 87% gas, 13% diesel; no missing values in any column |
 
 # COMMAND ----------
 
-dbutils.notebook.exit(OUTPUT_PATH)
+dbutils.notebook.exit(CLEAN_TABLE)
