@@ -1,0 +1,111 @@
+# ===========================================================
+# Databricks Asset Bundle (DAB) - Car Price Estimation Job
+# Job ID : 54992078007009
+# Workspace: dbc-02f6638c-851f.cloud.databricks.com
+# Exported : 2026-04-07
+# ===========================================================
+
+bundle:
+  name: car-price-estimation
+
+workspace:
+  host: https://dbc-02f6638c-851f.cloud.databricks.com
+
+resources:
+  jobs:
+    car_price_pipeline:
+      name: car_price_estimation_pipeline
+
+      description: >
+        A fully automated, end-to-end machine learning system for estimating
+        used car prices for a local dealership. Built on Databricks, the
+        pipeline ingests raw vehicle data, cleans and enriches it, trains and
+        tunes regression models automatically, explains individual predictions
+        to business stakeholders, and delivers a ready-to-use valuation
+        function.
+
+      # ── Runtime settings ──────────────────────────────────────
+      max_concurrent_runs: 1
+      queue:
+        enabled: true
+
+      # ── Serverless environment (Databricks Free Edition) ──────
+      environments:
+        - environment_key: Default
+          spec:
+            environment_version: "2"
+
+      # ── Tasks ─────────────────────────────────────────────────
+      tasks:
+
+        - task_key: Gathering
+          run_if: ALL_SUCCESS
+          environment_key: Default
+          notebook_task:
+            notebook_path: /Repos/${workspace.current_user.userName}/car-price-estimation/notebooks/01_Data_Gathering
+            source: WORKSPACE
+          timeout_seconds: 0
+
+        - task_key: Cleaning
+          depends_on:
+            - task_key: Gathering
+          run_if: ALL_SUCCESS
+          environment_key: Default
+          notebook_task:
+            notebook_path: /Repos/${workspace.current_user.userName}/car-price-estimation/notebooks/02_Data_Cleaning
+            source: WORKSPACE
+          timeout_seconds: 0
+
+        - task_key: Eda
+          depends_on:
+            - task_key: Cleaning
+          run_if: ALL_SUCCESS
+          environment_key: Default
+          notebook_task:
+            notebook_path: /Repos/${workspace.current_user.userName}/car-price-estimation/notebooks/03_EDA
+            source: WORKSPACE
+          timeout_seconds: 0
+
+        - task_key: Feature_Engineering
+          depends_on:
+            - task_key: Eda
+          run_if: ALL_SUCCESS
+          environment_key: Default
+          notebook_task:
+            notebook_path: /Repos/${workspace.current_user.userName}/car-price-estimation/notebooks/04_Feature_Engineering
+            source: WORKSPACE
+          timeout_seconds: 0
+
+        - task_key: Preprocessing
+          depends_on:
+            - task_key: Feature_Engineering
+          run_if: ALL_SUCCESS
+          environment_key: Default
+          notebook_task:
+            notebook_path: /Repos/${workspace.current_user.userName}/car-price-estimation/notebooks/05_Preprocessing_Dataset
+            source: WORKSPACE
+          timeout_seconds: 0
+
+        - task_key: Model_Training
+          depends_on:
+            - task_key: Preprocessing
+          run_if: ALL_SUCCESS
+          environment_key: Default
+          notebook_task:
+            notebook_path: /Repos/${workspace.current_user.userName}/car-price-estimation/notebooks/06_3Models_Training
+            source: WORKSPACE
+          timeout_seconds: 0
+
+        - task_key: Valuation
+          depends_on:
+            - task_key: Model_Training
+          run_if: ALL_SUCCESS
+          environment_key: Default
+          notebook_task:
+            notebook_path: /Repos/${workspace.current_user.userName}/car-price-estimation/notebooks/07_Valuation
+            source: WORKSPACE
+          timeout_seconds: 0
+
+      # ── Notifications ─────────────────────────────────────────
+      email_notifications:
+        no_alert_for_skipped_runs: false
