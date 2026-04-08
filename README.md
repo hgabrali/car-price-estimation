@@ -137,6 +137,81 @@ car-price-estimation/
 
 ---
 
+## 🚗 Regression Analysis Results
+
+> **Dataset:** `default.car_price_train` | 152 rows, 24 numeric features | Train: 121 / Test: 31 | `random_state=42`
+
+---
+
+### 📈 Linear Regression Results
+
+| Metric | Value |
+|--------|-------|
+| R² (R-squared) | 0.9936 |
+| MSE | 226,113.39 |
+| RMSE | 475.51 |
+| MAE | 348.81 |
+| Intercept | 12,620.12 |
+
+**Top 10 Feature Coefficients (by absolute value):**
+
+| Feature | Coefficient |
+|---------|-------------|
+| price_per_weight | +4,462.77 |
+| power_to_weight | −2,129.00 |
+| enginesize | +1,885.17 |
+| hp_per_cc | +1,432.43 |
+| compression_per_cyl | −899.22 |
+| horsepower | +885.33 |
+| curbweight | +735.32 |
+| citympg | +640.96 |
+| compressionratio | +620.46 |
+| brand_avg_price | +566.43 |
+
+> **Interpretation:** Linear Regression achieves an outstanding R² of 0.9936, meaning it explains 99.36% of price variance. The most influential predictor is `price_per_weight` (a derived ratio feature), followed by `power_to_weight` and `enginesize`. The negative coefficient on `power_to_weight` suggests multicollinearity with correlated features.
+
+---
+
+### 🌳 Decision Tree Regressor Results (max_depth=5)
+
+| Metric | Value |
+|--------|-------|
+| R² (R-squared) | 0.8771 |
+| MSE | 4,318,768.05 |
+| RMSE | 2,078.16 |
+| MAE | 1,478.92 |
+| Max Depth | 5 |
+
+**Top 10 Feature Importances:**
+
+| Feature | Importance |
+|---------|-----------|
+| price_per_weight | 0.6975 |
+| brand_avg_price | 0.1936 |
+| curbweight | 0.0953 |
+| avg_mpg | 0.0059 |
+| carlength | 0.0018 |
+| boreratio | 0.0015 |
+| symboling | 0.0011 |
+| enginesize | 0.0009 |
+| highwaympg | 0.0008 |
+| horsepower | 0.0007 |
+
+> **Interpretation:** The Decision Tree (depth=5) achieves a solid R² of 0.8771 (87.71%), but significantly higher error values compared to Linear Regression. The model is almost entirely driven by `price_per_weight` (69.7% importance), followed by `brand_avg_price` (19.4%), confirming these engineered features are highly predictive.
+
+---
+
+### 📊 Model Comparison Summary
+
+| Model | R² | MSE | RMSE | MAE |
+|-------|----|-----|------|-----|
+| Linear Regression | 0.9936 | 226,113 | 475.51 | 348.81 |
+| Decision Tree (depth=5) | 0.8771 | 4,318,768 | 2,078.16 | 1,478.92 |
+
+> **Conclusion:** Linear Regression clearly outperforms the Decision Tree on all metrics for this dataset. The very high R² (0.99) of Linear Regression suggests a strong linear relationship between the engineered features and car price. The Decision Tree, while interpretable and capable at 87.7% R², is more prone to overfitting due to the tree splits and produces considerably larger prediction errors (~4x higher RMSE). For production deployment, Linear Regression is the preferred model unless non-linearity or outlier robustness is a priority.
+
+---
+
 ## Setup Instructions
 
 ### 1. Prerequisites
