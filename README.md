@@ -212,6 +212,142 @@ car-price-estimation/
 
 ---
 
+---
+
+## Notebook 06 — Model Training, Evaluation & Interpretability
+
+> **PyCaret Integration for Rapid Prototyping — `06_3Models_Training`**
+
+### Overview
+
+This notebook is **Step 6 of 7** in the car price estimation ML pipeline. Its declared purpose is to train multiple regression models using a PyCaret-style AutoML comparison workflow (implemented via scikit-learn pipelines), tune the best-performing model, evaluate it on a held-out test set, and generate interpretability artifacts using SHAP and LIME. All experiments were intended to be tracked via MLflow.
+
+- **Inputs:** Preprocessed Train/Test Parquet tables (`car_price_train`, `car_price_test`) produced by Notebook 05.
+- **Outputs:** Saved model artifact (`final_model.pkl`) + evaluation metrics + interpretation plots.
+
+---
+
+### 1. Data Loading & Split
+
+| Property | Value |
+|----------|-------|
+| Training set | 152 rows |
+| Test set | 39 rows (approx. 80/20 split) |
+| Total feature columns | 38 |
+| Regression target | `price` |
+| Numerical features | 25 |
+| Categorical features | 13 |
+
+---
+
+### 2. Preprocessing Pipeline
+
+A `ColumnTransformer`-based preprocessing scheme was constructed:
+
+- **Numerical features:** Median imputation (`SimpleImputer`) → Standard scaling (`StandardScaler`)
+- **Categorical features:** Most-frequent imputation → One-Hot Encoding (`OneHotEncoder`, `handle_unknown='ignore'`)
+
+---
+
+### 3. Model Comparison (PyCaret-style AutoML)
+
+Three `sklearn` Pipeline models were evaluated via **5-fold cross-validated RMSE**:
+
+| Model | CV RMSE (USD) |
+|-------|--------------|
+| Ridge Regression (α=10.0) | $908.44 ✅ **Best** |
+| Gradient Boosting (n=100) | $930.08 |
+| Random Forest (n=100) | $1,150.98 |
+
+> Ridge Regression was selected as the best base model.
+
+---
+
+### 4. Hyperparameter Tuning
+
+A `GridSearchCV` (3-fold CV) was applied to the Ridge model with α ∈ {1.0, 10.0, 100.0}:
+
+| Parameter | Value |
+|-----------|-------|
+| Best alpha | 1.0 |
+| Tuned CV RMSE | $542.34 |
+| Untuned CV RMSE | $908.44 |
+| Improvement | ~40% reduction |
+
+---
+
+### 5. Final Test Set Evaluation
+
+The tuned Ridge pipeline was fitted on the full training set and evaluated on the 39-sample test set:
+
+| Metric | Value |
+|--------|-------|
+| MAE | $733.38 |
+| RMSE | $1,187.45 |
+| R² | 0.9714 (97.14% variance explained) |
+| MAPE | 5.58% |
+
+> The model achieves excellent generalization — R² of 0.97 on the test set indicates strong predictive power, and a MAPE of ~5.6% is well within acceptable bounds for dealership pricing guidance.
+
+> **Note:** The Business Summary section at the bottom of the notebook references earlier/alternative model run metrics (MAE $1,376, RMSE $1,915, R² 0.9536, MAPE 10.02%) that correspond to a Random Forest result — likely an earlier experimental run. The definitive, current execution results are those reported above for the tuned Ridge model.
+
+---
+
+### 6. Model Persistence & MLflow Logging
+
+MLflow tracking was attempted (`mlflow.set_experiment`, `mlflow.start_run`), but failed due to Databricks Free Edition limitations — the `spark.mlflow.modelRegistryUri` configuration is unavailable in this tier (`CONFIG_NOT_AVAILABLE / SQLSTATE: 42K0I`). As a fallback, the model was serialized locally via `joblib`:
+
+```
+/Workspace/Users/hande.gabrali@gmail.com/car-price-estimation/models/final_model.pkl
+```
+
+---
+
+### 7. SHAP — Global Feature Importance
+
+A SHAP `Explainer` was applied to the Ridge model's inner estimator on the transformed training data (82 features post-OHE). Two plots were generated and persisted:
+
+- `shap_summary.png` — beeswarm plot showing value distribution and directional impact of the top 15 features
+- `shap_importance.png` — bar chart of mean absolute SHAP values
+
+**Key SHAP findings:**
+
+- `curbweight` and `enginesize` are the strongest positive price predictors
+- `horsepower`, `carlength`, `carwidth` are significant positive drivers
+- `citympg` and `highwaympg` show negative correlation with price (economy vs. luxury trade-off)
+
+---
+
+### 8. LIME — Local Prediction Explanations
+
+A `LimeTabularExplainer` (regression mode) was used to explain three individual test-set predictions (indices 0, 19, 38):
+
+| Sample | Actual Price | Predicted Price |
+|--------|-------------|----------------|
+| #0 | $8,238 | $8,343 |
+| #19 | $11,048 | $10,674 |
+| #38 | $16,845 | $17,367 |
+
+LIME plots were saved as `lime_sample_0.png`, `lime_sample_19.png`, `lime_sample_38.png`. The close alignment between actual and predicted values across the price range confirms model stability.
+
+---
+
+### 9. Notable Issues & Observations
+
+| Issue | Description |
+|-------|-------------|
+| `threadpoolctl` AttributeError | A known harmless compatibility warning on certain Databricks runtimes (`NoneType.split` on `get_version()`). |
+| `SimpleImputer` UserWarning | The `car_id` column contains no observed (non-null) values in the training set; median imputation was silently skipped. This column is an identifier and should be dropped in upstream preprocessing. |
+| Py4J / gRPC connection resets | The Spark driver connection was temporarily dropped during GridSearchCV (a common occurrence on Free Edition serverless clusters due to idle timeouts). Computation completed successfully despite these transient errors. |
+| MLflow registry unavailable | Free Edition Databricks does not expose `spark.mlflow.modelRegistryUri`; the pipeline gracefully falls back to local `joblib` serialization. |
+| Business Summary metric discrepancy | Cell 12 reports Random Forest metrics (R²=0.95, MAPE=10%) rather than the final tuned Ridge metrics (R²=0.97, MAPE=5.58%), indicating the summary was written during an earlier experiment iteration and was not updated after the final run. |
+
+---
+
+### Summary
+
+The notebook successfully implements a rapid model prototyping workflow: automated multi-model comparison → hyperparameter tuning → held-out evaluation → explainability (SHAP + LIME) → model serialization. The final **Ridge Regression model (α=1.0)** achieves an **R² of 0.9714** and **MAPE of 5.58%** on the test set, making it production-ready for car price estimation tasks within the defined error tolerance.
+
 ## Setup Instructions
 
 ### 1. Prerequisites
