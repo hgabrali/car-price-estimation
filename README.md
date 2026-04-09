@@ -214,7 +214,7 @@ car-price-estimation/
 
 ---
 
-## Notebook 06 — Model Training, Evaluation & Interpretability
+## Model Training, Evaluation & Interpretability
 
 > **PyCaret Integration for Rapid Prototyping — `06_3Models_Training`**
 
